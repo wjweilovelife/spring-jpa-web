@@ -3,24 +3,67 @@
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:mvc="http://www.springframework.org/schema/mvc"
        xmlns:context="http://www.springframework.org/schema/context"
        xmlns:jpa="http://www.springframework.org/schema/data/jpa" xmlns:tx="http://www.springframework.org/schema/tx"
+       xmlns:aop="http://www.springframework.org/schema/aop"
        xsi:schemaLocation="http://www.springframework.org/schema/beans 
        http://www.springframework.org/schema/beans/spring-beans.xsd 
        http://www.springframework.org/schema/mvc 
        http://www.springframework.org/schema/mvc/spring-mvc.xsd 
        http://www.springframework.org/schema/context 
-       http://www.springframework.org/schema/context/spring-context.xsd http://www.springframework.org/schema/data/jpa http://www.springframework.org/schema/data/jpa/spring-jpa.xsd http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx.xsd">
+       http://www.springframework.org/schema/context/spring-context.xsd http://www.springframework.org/schema/data/jpa http://www.springframework.org/schema/data/jpa/spring-jpa.xsd http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
 
     <description>spring公共配置</description>
-
+    <!--数据库连接-->
+    <context:property-placeholder location="classpath:jdbc.properties"/>
     <!-- 配置自动扫描的包 -->
     <context:component-scan base-package="com.pactera">
         <context:exclude-filter type="annotation" expression="org.springframework.stereotype.Controller"/>
         <context:exclude-filter type="annotation" expression="org.springframework.web.bind.annotation.ControllerAdvice"/>
     </context:component-scan>
 
+    <!--统一的dataSource-->
+    <bean id="dynamicDataSource" class="com.pactera.datasource.DynamicDataSource" >
+        <property name="targetDataSources">
+            <map key-type="java.lang.String">
+                <!--通过不同的key决定用哪个dataSource-->
+                <entry key="dataSource_a" value-ref="dataSource_a"></entry>
+                <entry key="dataSource_b" value-ref="dataSource_b" ></entry>
+            </map>
+        </property>
+        <!--设置默认的dataSource-->
+        <property name="defaultTargetDataSource" ref="dataSource_a"></property>
+    </bean>
+    <!-- 数据源配置, 使用Tomcat JDBC连接池 -->
+    <bean id="dataSource_a" class="org.apache.tomcat.jdbc.pool.DataSource" destroy-method="close">
+        <!-- Connection Info -->
+        <property name="driverClassName" value="${jdbc.driver}"/>
+        <property name="url" value="${jdbc.url.a}"/>
+        <property name="username" value="${jdbc.username}"/>
+        <property name="password" value="${jdbc.password}"/>
+
+        <!-- Connection Pooling Info -->
+        <property name="maxActive" value="${jdbc.pool.maxActive}"/>
+        <property name="maxIdle" value="${jdbc.pool.maxIdle}"/>
+        <property name="minIdle" value="0"/>
+        <property name="defaultAutoCommit" value="false"/>
+    </bean>
+    <bean id="dataSource_b" class="org.apache.tomcat.jdbc.pool.DataSource" destroy-method="close">
+        <!-- Connection Info -->
+        <property name="driverClassName" value="${jdbc.driver}"/>
+        <property name="url" value="${jdbc.url.b}"/>
+        <property name="username" value="${jdbc.username}"/>
+        <property name="password" value="${jdbc.password}"/>
+
+        <!-- Connection Pooling Info -->
+        <property name="maxActive" value="${jdbc.pool.maxActive}"/>
+        <property name="maxIdle" value="${jdbc.pool.maxIdle}"/>
+        <property name="minIdle" value="0"/>
+        <property name="defaultAutoCommit" value="false"/>
+    </bean>
+
+
     <!-- Jpa Entity Manager 配置 -->
     <bean id="entityManagerFactory" class="org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean">
-        <property name="dataSource" ref="dataSource"/>
+        <property name="dataSource" ref="dynamicDataSource"/>
         <property name="jpaVendorAdapter" ref="hibernateJpaVendorAdapter"/>
         <property name="packagesToScan" value="com.pactera"/>
         <property name="jpaProperties">
@@ -47,34 +90,52 @@
         <property name="database" value="MYSQL"/>
         <property name="databasePlatform" value="org.hibernate.dialect.MySQLInnoDBDialect"/>
     </bean>
-    <!-- Spring Data Jpa配置 -->
-    <jpa:repositories base-package="com.pactera" transaction-manager-ref="transactionManager"
-                      entity-manager-factory-ref="entityManagerFactory"/>
-
     <!-- Jpa 事务配置 -->
     <bean id="transactionManager" class="org.springframework.orm.jpa.JpaTransactionManager">
         <property name="entityManagerFactory" ref="entityManagerFactory"/>
+        <qualifier value="transactionManager"/>
     </bean>
     <!-- 使用annotation定义事务 -->
     <tx:annotation-driven transaction-manager="transactionManager" proxy-target-class="true"/>
 
-    <!--<bean id="jdbcTemplate" class="org.springframework.jdbc.core.JdbcTemplate">-->
-        <!--<property name="dataSource" ref="dataSource"/>-->
-    <!--</bean>-->
-    <!-- 数据源配置, 使用Tomcat JDBC连接池 -->
-    <bean id="dataSource" class="org.apache.tomcat.jdbc.pool.DataSource" destroy-method="close">
-        <!-- Connection Info -->
-        <property name="driverClassName" value="${jdbc.driver}"/>
-        <property name="url" value="${jdbc.url}"/>
-        <property name="username" value="${jdbc.username}"/>
-        <property name="password" value="${jdbc.password}"/>
+    <!-- Spring Data Jpa配置 -->
+    <jpa:repositories base-package="com.pactera.repository" transaction-manager-ref="transactionManager" entity-manager-factory-ref="entityManagerFactory" />
 
-        <!-- Connection Pooling Info -->
-        <property name="maxActive" value="${jdbc.pool.maxActive}"/>
-        <property name="maxIdle" value="${jdbc.pool.maxIdle}"/>
-        <property name="minIdle" value="0"/>
-        <property name="defaultAutoCommit" value="true"/>
+<!--++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-->
+<!--++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-->
+    <!-- 配置数据源切换切面 -->
+    <bean id="dataSourceChangeAspect" class="com.pactera.datasource.DataSourceAspect">
+        <property name="defaultDataSource" value="cmsBaseDataSource"></property>
+        <property name="targetDataSources">
+            <map key-type="java.lang.String">
+                <!--通过不同的key决定用哪个dataSource-->
+                <entry key="dataSource_a" value="dataSource_a"></entry>
+                <entry key="dataSource_b" value="dataSource_b" ></entry>
+            </map>
+        </property>
     </bean>
-    <!--数据库连接-->
-    <context:property-placeholder location="classpath:jdbc.properties"/>
+    <aop:config>
+        <aop:pointcut id="seckillAop" expression="execution(* com.pactera.service.*service..*.*(..)))" />
+        <aop:advisor advice-ref="txAdvice" pointcut-ref="seckillAop" order="2"/>
+
+        <!-- 配置数据源的动态切换 -->
+        <aop:aspect ref="dataSourceChangeAspect" order="1">
+            <aop:before method="doBefore" pointcut-ref="seckillAop"/>
+            <aop:after-returning method="doAfterReturning" pointcut-ref="seckillAop"/>
+        </aop:aspect>
+    </aop:config>
+    <tx:advice id="txAdvice" transaction-manager="transactionManager">
+        <tx:attributes>
+            <tx:method name="add*" propagation="REQUIRED" />
+            <tx:method name="edit*" propagation="REQUIRED" />
+            <tx:method name="remove*" propagation="REQUIRED" />
+            <tx:method name="save*" propagation="REQUIRED" />
+            <tx:method name="update*" propagation="REQUIRED" />
+            <tx:method name="delete*" propagation="REQUIRED" />
+            <tx:method name="batchUpdate" propagation="REQUIRED" />
+            <tx:method name="*" read-only="true" />
+        </tx:attributes>
+    </tx:advice>
+
+    <!--+++++++++++swagger configuration+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-->
 </beans>

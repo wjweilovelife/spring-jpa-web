@@ -65,7 +65,7 @@
                 <td>
                     <fmt:formatDate value="${emp.createTime }" pattern="yyyy-MM-dd hh:mm:ss"/>
                 </td>
-                <td>${emp.departmentId }</td>
+                <%--<td>${emp.departmentId }</td>--%>
 
                 <td><a href="${pageContext.request.contextPath }/emp/${emp.id}">Edit</a></td>
                 <td>
